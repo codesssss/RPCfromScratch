@@ -20,7 +20,7 @@ public class NettyKryoDecoder extends ByteToMessageDecoder {
     private final Class<?> genericClass;
 
     /**
-     * Netty传输的消息长度也就是对象序列化后对应的字节数组的大小，存储在 ByteBuf 头部
+     * Netty传输的消息长度也就是对象序列化后对应的字节数组的大小，存储在 ByteBuf 头部，一个int对应4字节
      */
     private static final int BODY_LENGTH = 4;
 
