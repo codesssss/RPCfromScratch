@@ -21,8 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
- * @author Xuhang Shi
- * @date 14/4/2024 11:37 pm
+ * @author codesssss
+ * @date 14/4/2024 11:37 pm
  */
 @Slf4j
 public final class CuratorUtils {

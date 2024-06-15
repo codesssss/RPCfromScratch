@@ -10,8 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 /**
- * @author Xuhang Shi
- * @date 14/4/2024 11:47 pm
+ * @author codesssss
+ * @date 14/4/2024 11:47 pm
  */
 @Slf4j
 public final class PropertiesFileUtil {

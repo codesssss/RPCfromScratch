@@ -7,8 +7,8 @@ import org.tic.registry.zk.utils.CuratorUtils;
 import java.net.InetSocketAddress;
 
 /**
- * @author Xuhang Shi
- * @date 14/4/2024 11:49 pm
+ * @author codesssss
+ * @date 14/4/2024 11:49 pm
  */
 public class ZkServiceRegistryImpl implements ServiceRegistry {
     @Override

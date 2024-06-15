@@ -6,8 +6,8 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import lombok.AllArgsConstructor;
 
 /**
- * @author Xuhang Shi
- * @date 27/11/2023 11:27 pm
+ * @author codesssss
+ * @date 27/11/2023 11:27 pm
  */
 @AllArgsConstructor
 public class NettyKryoEncoder extends MessageToByteEncoder<Object> {

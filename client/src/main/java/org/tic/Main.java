@@ -1,8 +1,8 @@
 package org.tic;
 
 /**
- * @author Xuhang Shi
- * @date 24/11/2023 10:36 am
+ * @author codesssss
+ * @date 24/11/2023 10:36 am
  */
 public class Main {
     public static void main(String[] args) {

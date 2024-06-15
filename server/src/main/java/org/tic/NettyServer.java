@@ -14,8 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @author Xuhang Shi
- * @date 27/11/2023 11:25 pm
+ * @author codesssss
+ * @date 27/11/2023 11:25 pm
  */
 public class NettyServer {
     private static final Logger logger = LoggerFactory.getLogger(NettyServer.class);

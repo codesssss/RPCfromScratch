@@ -1,8 +1,8 @@
 package org.tic;
 
 /**
- * @author Xuhang Shi
- * @date 27/11/2023 11:22 pm
+ * @author codesssss
+ * @date 27/11/2023 11:22 pm
  */
 public interface Serializer {
     /**

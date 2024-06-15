@@ -8,8 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @author Xuhang Shi
- * @date 27/11/2023 11:23 pm
+ * @author codesssss
+ * @date 27/11/2023 11:23 pm
  */
 public class NettyClientHandler extends ChannelInboundHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(NettyClientHandler.class);

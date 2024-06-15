@@ -6,8 +6,8 @@ import org.tic.enums.RpcResponseCodeEnum;
 import java.io.Serializable;
 
 /**
- * @author Xuhang Shi
- * @date 27/11/2023 9:51 pm
+ * @author codesssss
+ * @date 27/11/2023 9:51 pm
  */
 
 @AllArgsConstructor
