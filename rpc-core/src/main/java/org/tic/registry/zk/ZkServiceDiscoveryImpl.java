@@ -2,11 +2,11 @@ package org.tic.registry.zk;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.framework.CuratorFramework;
-import org.tic.RpcRequest;
 import org.tic.enums.RpcErrorMessageEnum;
 import org.tic.exception.RpcException;
 import org.tic.registry.ServiceDiscovery;
 import org.tic.registry.zk.utils.CuratorUtils;
+import org.tic.remoting.dto.RpcRequest;
 
 import java.net.InetSocketAddress;
 import java.util.List;

@@ -1,7 +1,6 @@
 package org.tic.registry;
 
-import org.tic.RpcRequest;
-
+import org.tic.remoting.dto.RpcRequest;
 import java.net.InetSocketAddress;
 
 /**

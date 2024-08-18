@@ -1,7 +1,7 @@
 package org.tic.remoting.transport;
 
-import org.tic.RpcRequest;
 import org.tic.extension.SPI;
+import org.tic.remoting.dto.RpcRequest;
 
 /**
  * @author codesssss

@@ -4,8 +4,8 @@ import com.esotericsoftware.kryo.kryo5.Kryo;
 import com.esotericsoftware.kryo.kryo5.io.Input;
 import com.esotericsoftware.kryo.kryo5.io.Output;
 import lombok.extern.slf4j.Slf4j;
-import org.tic.RpcRequest;
-import org.tic.RpcResponse;
+import org.tic.remoting.dto.RpcRequest;
+import org.tic.remoting.dto.RpcResponse;
 import org.tic.serialize.Serializer;
 import org.tic.exception.SerializeException;
 
