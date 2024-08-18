@@ -1,0 +1,2 @@
+netty=org.tic.remoting.transport.netty.client.NettyRpcClient
+socket=org.tic.remoting.transport.socket.SocketRpcClient

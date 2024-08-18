@@ -1,0 +1,1 @@
+loadBalance=org.tic.loadbalance.loadbalancer.ConsistentHashLoadBalance
