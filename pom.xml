@@ -12,6 +12,9 @@
     <modules>
         <module>rpc-core</module>
         <module>rpc-common</module>
+        <module>sample-rpc-client</module>
+        <module>sample-rpc-server</module>
+        <module>sample-service-api</module>
     </modules>
 
     <properties>
