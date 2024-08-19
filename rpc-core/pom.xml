@@ -13,6 +13,12 @@
 
     <artifactId>rpc-core</artifactId>
 
+    <properties>
+        <maven.compiler.source>22</maven.compiler.source>
+        <maven.compiler.target>22</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
     <dependencies>
         <!-- Lombok dependency managed by parent -->
         <dependency>

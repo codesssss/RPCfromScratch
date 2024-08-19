@@ -1,9 +1,12 @@
 package org.tic.serialize;
 
+import org.tic.extension.SPI;
+
 /**
  * @author codesssss
  * @date 27/11/2023 11:22 pm
  */
+@SPI
 public interface Serializer {
     /**
      * 序列化
