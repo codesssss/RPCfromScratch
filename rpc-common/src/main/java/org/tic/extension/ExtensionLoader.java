@@ -117,6 +117,7 @@ public final class ExtensionLoader<T> {
             Enumeration<URL> urls;
             ClassLoader classLoader = ExtensionLoader.class.getClassLoader();
             urls = classLoader.getResources(fileName);
+            System.out.println("Resources found: " + (urls != null && urls.hasMoreElements()));
             if (urls != null) {
                 while (urls.hasMoreElements()) {
                     URL resourceUrl = urls.nextElement();

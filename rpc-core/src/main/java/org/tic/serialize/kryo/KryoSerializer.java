@@ -1,8 +1,8 @@
-package org.tic.serialize.kyro;
+package org.tic.serialize.kryo;
 
-import com.esotericsoftware.kryo.kryo5.Kryo;
-import com.esotericsoftware.kryo.kryo5.io.Input;
-import com.esotericsoftware.kryo.kryo5.io.Output;
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
 import lombok.extern.slf4j.Slf4j;
 import org.tic.remoting.dto.RpcRequest;
 import org.tic.remoting.dto.RpcResponse;
@@ -24,6 +24,7 @@ public class KryoSerializer implements Serializer {
      */
     private final ThreadLocal<Kryo> kryoThreadLocal = ThreadLocal.withInitial(() -> {
         Kryo kryo = new Kryo();
+        kryo.setRegistrationRequired(false);
         kryo.register(RpcResponse.class);
         kryo.register(RpcRequest.class);
         return kryo;

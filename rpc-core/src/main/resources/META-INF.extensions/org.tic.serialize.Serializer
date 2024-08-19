@@ -1,3 +1,0 @@
-kyro=org.tic.serialize.kyro.KryoSerializer
-protostuff=org.tic.serialize.protostuff.ProtostuffSerializer
-hessian=org.tic.serialize.hessian.HessianSerializer

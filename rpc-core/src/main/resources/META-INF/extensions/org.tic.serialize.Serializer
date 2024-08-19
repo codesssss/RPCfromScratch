@@ -1,0 +1,1 @@
+kryo=org.tic.serialize.kryo.KryoSerializer
