@@ -23,16 +23,25 @@ import java.net.InetSocketAddress;
  */
 @Slf4j
 public class NettyRpcClientHandler extends ChannelInboundHandlerAdapter {
+
+    // Manager for unprocessed RPC requests
     private final UnprocessedRequests unprocessedRequests;
+
+    // Reference to the Netty RPC client
     private final NettyRpcClient nettyRpcClient;
 
     public NettyRpcClientHandler() {
+        // Initialize the manager for unprocessed requests
         this.unprocessedRequests = SingletonFactory.getInstance(UnprocessedRequests.class);
+        // Initialize the RPC client
         this.nettyRpcClient = SingletonFactory.getInstance(NettyRpcClient.class);
     }
 
     /**
-     * Read the message transmitted by the server
+     * Handles the messages received from the server.
+     *
+     * @param ctx the channel handler context
+     * @param msg the message received from the server
      */
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
@@ -42,29 +51,38 @@ public class NettyRpcClientHandler extends ChannelInboundHandlerAdapter {
                 RpcMessage tmp = (RpcMessage) msg;
                 byte messageType = tmp.getMessageType();
                 if (messageType == RpcConstants.HEARTBEAT_RESPONSE_TYPE) {
-                    log.info("heart [{}]", tmp.getData());
+                    log.info("Heartbeat response received: [{}]", tmp.getData());
                 } else if (messageType == RpcConstants.RESPONSE_TYPE) {
                     RpcResponse<Object> rpcResponse = (RpcResponse<Object>) tmp.getData();
                     unprocessedRequests.complete(rpcResponse);
                 }
             }
         } finally {
+            // Release the reference to the message to prevent memory leaks
             ReferenceCountUtil.release(msg);
         }
     }
 
+    /**
+     * Handles special user events, such as idle state events.
+     *
+     * @param ctx the channel handler context
+     * @param evt the event triggered
+     * @throws Exception if an error occurs while handling the event
+     */
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent) {
             IdleState state = ((IdleStateEvent) evt).state();
             if (state == IdleState.WRITER_IDLE) {
-                log.info("write idle happen [{}]", ctx.channel().remoteAddress());
+                log.info("Write idle detected for [{}]", ctx.channel().remoteAddress());
                 Channel channel = nettyRpcClient.getChannel((InetSocketAddress) ctx.channel().remoteAddress());
                 RpcMessage rpcMessage = new RpcMessage();
-                rpcMessage.setCodec(SerializationTypeEnum.PROTOSTUFF.getCode());
+                rpcMessage.setCodec(SerializationTypeEnum.KRYO.getCode());
                 rpcMessage.setCompress(CompressTypeEnum.GZIP.getCode());
                 rpcMessage.setMessageType(RpcConstants.HEARTBEAT_REQUEST_TYPE);
                 rpcMessage.setData(RpcConstants.PING);
+                // Send the heartbeat request and close the channel if the write fails
                 channel.writeAndFlush(rpcMessage).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
             }
         } else {
@@ -73,13 +91,17 @@ public class NettyRpcClientHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Called when an exception occurs in processing a client message
+     * Called when an exception occurs during the processing of a client message.
+     *
+     * @param ctx the channel handler context
+     * @param cause the exception that was caught
      */
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("client catch exception：", cause);
+        log.error("Client caught an exception:", cause);
         cause.printStackTrace();
+        // Close the channel in case of an exception
         ctx.close();
     }
-
 }
+
