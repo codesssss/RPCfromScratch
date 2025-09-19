@@ -5,6 +5,8 @@ import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.imps.CuratorFrameworkState;
+import org.apache.curator.framework.state.ConnectionState;
+import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
 import org.apache.curator.retry.ExponentialBackoffRetry;
@@ -31,9 +33,12 @@ public final class CuratorUtils {
     private static final int MAX_RETRIES = 3;
     public static final String ZK_REGISTER_ROOT_PATH = "/my-rpc";
     private static final Map<String, List<String>> SERVICE_ADDRESS_MAP = new ConcurrentHashMap<>();
+    private static final Map<String, Long> SERVICE_ADDRESS_CACHE_TIME = new ConcurrentHashMap<>();
     private static final Set<String> REGISTERED_PATH_SET = ConcurrentHashMap.newKeySet();
+    private static final Map<String, byte[]> REGISTERED_NODE_DATA = new ConcurrentHashMap<>();
     private static CuratorFramework zkClient;
     private static final String DEFAULT_ZOOKEEPER_ADDRESS = "127.0.0.1:2181";
+    private static final long DEFAULT_CACHE_TTL_MS = 5000L;
 
     private CuratorUtils() {
     }
@@ -52,9 +57,50 @@ public final class CuratorUtils {
                 zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path);
                 log.info("The node was created successfully. The node is:[{}]", path);
             }
-            REGISTERED_PATH_SET.add(path);
+            // persistent parent path should not be tracked for re-registration or clearAll
         } catch (Exception e) {
             log.error("create persistent node for path [{}] fail", path);
+        }
+    }
+
+    /**
+     * Create ephemeral nodes. Ephemeral nodes will be removed when the client disconnects.
+     *
+     * @param path node path
+     */
+    public static void createEphemeralNode(CuratorFramework zkClient, String path) {
+        try {
+            if (REGISTERED_PATH_SET.contains(path) && zkClient.checkExists().forPath(path) != null) {
+                log.info("The node already exists. The node is:[{}]", path);
+            } else {
+                zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path);
+                log.info("The ephemeral node was created successfully. The node is:[{}]", path);
+            }
+            REGISTERED_PATH_SET.add(path);
+        } catch (Exception e) {
+            log.error("create ephemeral node for path [{}] fail", path);
+        }
+    }
+
+    /**
+     * Create ephemeral node with data and remember the data for re-registration.
+     */
+    public static void createEphemeralNode(CuratorFramework zkClient, String path, byte[] data) {
+        try {
+            if (zkClient.checkExists().forPath(path) != null) {
+                // update data
+                zkClient.setData().forPath(path, data);
+                log.info("The ephemeral node already exists, updated data. Node:[{}]", path);
+            } else {
+                zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path, data);
+                log.info("The ephemeral node with data was created successfully. Node:[{}]", path);
+            }
+            REGISTERED_PATH_SET.add(path);
+            if (data != null) {
+                REGISTERED_NODE_DATA.put(path, data);
+            }
+        } catch (Exception e) {
+            log.error("create ephemeral node with data for path [{}] fail", path);
         }
     }
 
@@ -65,19 +111,27 @@ public final class CuratorUtils {
      * @return All child nodes under the specified node
      */
     public static List<String> getChildrenNodes(CuratorFramework zkClient, String rpcServiceName) {
-        if (SERVICE_ADDRESS_MAP.containsKey(rpcServiceName)) {
-            return SERVICE_ADDRESS_MAP.get(rpcServiceName);
-        }
-        List<String> result = null;
         String servicePath = ZK_REGISTER_ROOT_PATH + "/" + rpcServiceName;
-        try {
-            result = zkClient.getChildren().forPath(servicePath);
-            SERVICE_ADDRESS_MAP.put(rpcServiceName, result);
-            registerWatcher(rpcServiceName, zkClient);
-        } catch (Exception e) {
-            log.error("get children nodes for path [{}] fail", servicePath);
+        long ttlMs = getCacheTtlMs();
+        Long lastUpdate = SERVICE_ADDRESS_CACHE_TIME.get(rpcServiceName);
+        List<String> cached = SERVICE_ADDRESS_MAP.get(rpcServiceName);
+        long now = System.currentTimeMillis();
+        if (cached != null && lastUpdate != null && (now - lastUpdate) <= ttlMs) {
+            return cached;
         }
-        return result;
+        try {
+            List<String> result = zkClient.getChildren().forPath(servicePath);
+            SERVICE_ADDRESS_MAP.put(rpcServiceName, result);
+            SERVICE_ADDRESS_CACHE_TIME.put(rpcServiceName, now);
+            registerWatcher(rpcServiceName, zkClient);
+            return result;
+        } catch (Exception e) {
+            log.error("get children nodes for path [{}] fail, try fallback to cache", servicePath);
+            if (cached != null) {
+                return cached;
+            }
+            return null;
+        }
     }
 
     /**
@@ -112,6 +166,28 @@ public final class CuratorUtils {
                 .retryPolicy(retryPolicy)
                 .build();
         zkClient.start();
+        // add connection state listener for re-registration on session reconnected
+        ConnectionStateListener listener = (client, newState) -> {
+            if (newState == ConnectionState.LOST) {
+                log.warn("Zookeeper connection LOST. Will try to re-register on RECONNECTED.");
+            }
+            if (newState == ConnectionState.RECONNECTED) {
+                log.info("Zookeeper RECONNECTED. Re-registering ephemeral nodes: {}", REGISTERED_PATH_SET.size());
+                REGISTERED_PATH_SET.forEach(path -> {
+                    try {
+                        byte[] data = REGISTERED_NODE_DATA.get(path);
+                        if (data != null) {
+                            createEphemeralNode(client, path, data);
+                        } else {
+                            createEphemeralNode(client, path);
+                        }
+                    } catch (Exception ex) {
+                        log.error("Re-register node failed for path: {}", path, ex);
+                    }
+                });
+            }
+        };
+        zkClient.getConnectionStateListenable().addListener(listener);
         try {
             // wait 30s until connect to the zookeeper
             if (!zkClient.blockUntilConnected(30, TimeUnit.SECONDS)) {
@@ -134,9 +210,32 @@ public final class CuratorUtils {
         PathChildrenCacheListener pathChildrenCacheListener = (curatorFramework, pathChildrenCacheEvent) -> {
             List<String> serviceAddresses = curatorFramework.getChildren().forPath(servicePath);
             SERVICE_ADDRESS_MAP.put(rpcServiceName, serviceAddresses);
+            SERVICE_ADDRESS_CACHE_TIME.put(rpcServiceName, System.currentTimeMillis());
         };
         pathChildrenCache.getListenable().addListener(pathChildrenCacheListener);
         pathChildrenCache.start();
+    }
+
+    public static byte[] getNodeData(CuratorFramework zkClient, String path) {
+        try {
+            return zkClient.getData().forPath(path);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static long getCacheTtlMs() {
+        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
+        if (properties != null) {
+            String ttl = properties.getProperty(RpcConfigEnum.ZK_CACHE_TTL_MS.getPropertyValue());
+            if (ttl != null) {
+                try {
+                    return Long.parseLong(ttl);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return DEFAULT_CACHE_TTL_MS;
     }
 
 }
