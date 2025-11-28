@@ -12,7 +12,9 @@ import lombok.Getter;
 public enum RpcConfigEnum {
 
     RPC_CONFIG_PATH("rpc.properties"),
-    ZK_ADDRESS("rpc.zookeeper.address");
+    ZK_ADDRESS("rpc.zookeeper.address"),
+    ZK_CACHE_TTL_MS("rpc.zk.cache.ttl.ms"),
+    INSTANCE_WEIGHT("rpc.instance.weight");
 
     private final String propertyValue;
 
