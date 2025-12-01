@@ -1,8 +1,8 @@
 package org.tic.proxy;
 
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.tic.config.RpcServiceConfig;
+import org.tic.enums.RpcConfigEnum;
 import org.tic.enums.RpcErrorMessageEnum;
 import org.tic.enums.RpcResponseCodeEnum;
 import org.tic.exception.RpcException;
@@ -10,37 +10,67 @@ import org.tic.remoting.dto.RpcRequest;
 import org.tic.remoting.dto.RpcResponse;
 import org.tic.remoting.transport.RpcRequestTransport;
 import org.tic.remoting.transport.netty.client.NettyRpcClient;
+import org.tic.utils.PropertiesFileUtil;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * @author codesssss
- * @date 18/8/2024 11:06 pm
+ * @date 18/8/2024 11:06 pm
  */
 @Slf4j
 public class RpcClientProxy implements InvocationHandler {
 
     private static final String INTERFACE_NAME = "interfaceName";
+    /**
+     * Default request timeout in milliseconds (30 seconds)
+     */
+    private static final long DEFAULT_REQUEST_TIMEOUT_MS = 30000L;
 
     /**
      * Used to send requests to the server.And there are two implementations: socket and netty
      */
     private final RpcRequestTransport rpcRequestTransport;
     private final RpcServiceConfig rpcServiceConfig;
+    private final long requestTimeoutMs;
 
     public RpcClientProxy(RpcRequestTransport rpcRequestTransport, RpcServiceConfig rpcServiceConfig) {
         this.rpcRequestTransport = rpcRequestTransport;
         this.rpcServiceConfig = rpcServiceConfig;
+        this.requestTimeoutMs = loadRequestTimeout();
     }
 
 
     public RpcClientProxy(RpcRequestTransport rpcRequestTransport) {
         this.rpcRequestTransport = rpcRequestTransport;
         this.rpcServiceConfig = new RpcServiceConfig();
+        this.requestTimeoutMs = loadRequestTimeout();
+    }
+
+    /**
+     * Load request timeout from configuration file
+     */
+    private long loadRequestTimeout() {
+        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
+        if (properties != null) {
+            String timeoutStr = properties.getProperty(RpcConfigEnum.RPC_REQUEST_TIMEOUT_MS.getPropertyValue());
+            if (timeoutStr != null) {
+                try {
+                    return Long.parseLong(timeoutStr);
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid request timeout configuration: {}, using default: {}ms", timeoutStr, DEFAULT_REQUEST_TIMEOUT_MS);
+                }
+            }
+        }
+        return DEFAULT_REQUEST_TIMEOUT_MS;
     }
 
     /**
@@ -55,7 +85,6 @@ public class RpcClientProxy implements InvocationHandler {
      * This method is actually called when you use a proxy object to call a method.
      * The proxy object is the object you get through the getProxy method.
      */
-    @SneakyThrows
     @SuppressWarnings("unchecked")
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) {
@@ -71,7 +100,26 @@ public class RpcClientProxy implements InvocationHandler {
         RpcResponse<Object> rpcResponse = null;
         if (rpcRequestTransport instanceof NettyRpcClient) {
             CompletableFuture<RpcResponse<Object>> completableFuture = (CompletableFuture<RpcResponse<Object>>) rpcRequestTransport.sendRpcRequest(rpcRequest);
-            rpcResponse = completableFuture.get();
+            try {
+                // Use timeout to prevent indefinite blocking
+                rpcResponse = completableFuture.get(requestTimeoutMs, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                // Cancel the future and clean up
+                completableFuture.cancel(true);
+                log.error("RPC request timeout after {}ms, requestId: {}, interface: {}, method: {}", 
+                        requestTimeoutMs, rpcRequest.getRequestId(), rpcRequest.getInterfaceName(), rpcRequest.getMethodName());
+                throw new RpcException(RpcErrorMessageEnum.SERVICE_INVOCATION_FAILURE, 
+                        "Request timeout after " + requestTimeoutMs + "ms, " + INTERFACE_NAME + ":" + rpcRequest.getInterfaceName());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("RPC request interrupted, requestId: {}", rpcRequest.getRequestId());
+                throw new RpcException(RpcErrorMessageEnum.SERVICE_INVOCATION_FAILURE, 
+                        "Request interrupted, " + INTERFACE_NAME + ":" + rpcRequest.getInterfaceName());
+            } catch (ExecutionException e) {
+                log.error("RPC request execution failed, requestId: {}, cause: {}", rpcRequest.getRequestId(), e.getCause());
+                throw new RpcException(RpcErrorMessageEnum.SERVICE_INVOCATION_FAILURE, 
+                        "Request execution failed: " + e.getCause().getMessage() + ", " + INTERFACE_NAME + ":" + rpcRequest.getInterfaceName());
+            }
         }
         this.check(rpcResponse, rpcRequest);
         return rpcResponse.getData();
@@ -91,4 +139,3 @@ public class RpcClientProxy implements InvocationHandler {
         }
     }
 }
-
