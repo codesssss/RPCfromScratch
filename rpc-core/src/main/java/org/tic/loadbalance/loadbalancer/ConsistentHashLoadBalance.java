@@ -3,6 +3,8 @@ package org.tic.loadbalance.loadbalancer;
 import lombok.extern.slf4j.Slf4j;
 import org.tic.loadbalance.AbstractLoadBalance;
 import org.tic.remoting.dto.RpcRequest;
+import org.tic.config.ConfigResolver;
+import org.tic.enums.RpcConfigEnum;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -20,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class ConsistentHashLoadBalance extends AbstractLoadBalance {
     private final ConcurrentHashMap<String, ConsistentHashSelector> selectors = new ConcurrentHashMap<>();
+    private final String keyStrategy = ConfigResolver.getString(RpcConfigEnum.HASH_KEY_STRATEGY.getPropertyValue(), "method+params");
 
     @Override
     protected String doSelect(List<String> serviceAddresses, RpcRequest rpcRequest) {
@@ -32,7 +35,25 @@ public class ConsistentHashLoadBalance extends AbstractLoadBalance {
             selectors.put(rpcServiceName, new ConsistentHashSelector(serviceAddresses, 160, identityHashCode));
             selector = selectors.get(rpcServiceName);
         }
-        return selector.select(rpcServiceName + Arrays.stream(rpcRequest.getParameters()));
+        String key = buildKey(rpcRequest);
+        return selector.select(key);
+    }
+
+    private String buildKey(RpcRequest rpcRequest) {
+        String methodKey = rpcRequest.getRpcServiceName() + "#" + rpcRequest.getMethodName();
+        switch (keyStrategy.toLowerCase()) {
+            case "method":
+                return methodKey;
+            case "params":
+                return Arrays.deepToString(rpcRequest.getParameters());
+            case "method+firstparam":
+                Object[] params = rpcRequest.getParameters();
+                Object first = (params != null && params.length > 0) ? params[0] : "";
+                return methodKey + "#" + String.valueOf(first);
+            case "method+params":
+            default:
+                return methodKey + Arrays.deepToString(rpcRequest.getParameters());
+        }
     }
 
     static class ConsistentHashSelector {
@@ -88,4 +109,3 @@ public class ConsistentHashLoadBalance extends AbstractLoadBalance {
         }
     }
 }
-

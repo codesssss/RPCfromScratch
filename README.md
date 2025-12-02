@@ -88,13 +88,18 @@ rpc.zookeeper.address=127.0.0.1:2181
   - 服务发现：`org.tic.registry.ServiceDiscovery`
     - `zk=org.tic.registry.zk.ZkServiceDiscoveryImpl`
   - 负载均衡：`org.tic.loadbalance.LoadBalance`
-    - `loadBalance=org.tic.loadbalance.loadbalancer.ConsistentHashLoadBalance`
+    - 新格式支持优先级与默认实现：`loadBalance=org.tic.loadbalance.loadbalancer.ConsistentHashLoadBalance;order=10;default=true`
+    - 可选实现：`random=org.tic.loadbalance.loadbalancer.RandomLoadBalance;order=20`
   - 序列化：`org.tic.serialize.Serializer`
     - `kryo=org.tic.serialize.kryo.KryoSerializer`
   - 压缩：`org.tic.compress.Compress`
     - `gzip=org.tic.compress.gzip.GzipCompress`
 
 切换实现：修改上述映射中的 value 即可；或新增实现类并在对应文件内增加 `key=全限定类名`。
+新格式向后兼容：
+- 旧格式：`name=implClass`（默认 order=100）
+- 扩展格式：`name=implClass;order=10;default=true`（优先级与默认标记）
+同时兼容 `META-INF/services/{接口全名}` 的标准 ServiceLoader 声明，类名将使用简单类名作为 key，优先级最低（仅在未被 extensions 同名覆盖时生效）。
 
 ### 协议简述
 

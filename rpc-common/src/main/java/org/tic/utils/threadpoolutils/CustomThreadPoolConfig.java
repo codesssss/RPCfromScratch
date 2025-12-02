@@ -23,6 +23,7 @@ public class CustomThreadPoolConfig {
     private static final TimeUnit DEFAULT_TIME_UNIT = TimeUnit.MINUTES;
     private static final int DEFAULT_BLOCKING_QUEUE_CAPACITY = 100;
     private static final int BLOCKING_QUEUE_CAPACITY = 100;
+    private static final String DEFAULT_REJECTION_POLICY = "abort";
 
     /**
      * Configurable parameters
@@ -33,5 +34,8 @@ public class CustomThreadPoolConfig {
     private TimeUnit unit = DEFAULT_TIME_UNIT;
     // Use a bounded queue
     private BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(BLOCKING_QUEUE_CAPACITY);
+    /**
+     * Rejection policy key: abort|callerRuns|discard|discardOldest
+     */
+    private String rejectionPolicy = DEFAULT_REJECTION_POLICY;
 }
-

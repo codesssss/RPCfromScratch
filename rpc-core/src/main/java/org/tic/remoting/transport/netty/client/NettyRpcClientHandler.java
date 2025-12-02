@@ -29,12 +29,14 @@ public class NettyRpcClientHandler extends ChannelInboundHandlerAdapter {
 
     // Reference to the Netty RPC client
     private final NettyRpcClient nettyRpcClient;
+    private final InstanceHealthTracker healthTracker;
 
     public NettyRpcClientHandler() {
         // Initialize the manager for unprocessed requests
         this.unprocessedRequests = SingletonFactory.getInstance(UnprocessedRequests.class);
         // Initialize the RPC client
         this.nettyRpcClient = SingletonFactory.getInstance(NettyRpcClient.class);
+        this.healthTracker = SingletonFactory.getInstance(InstanceHealthTracker.class);
     }
 
     /**
@@ -55,6 +57,9 @@ public class NettyRpcClientHandler extends ChannelInboundHandlerAdapter {
                 } else if (messageType == RpcConstants.RESPONSE_TYPE) {
                     RpcResponse<Object> rpcResponse = (RpcResponse<Object>) tmp.getData();
                     unprocessedRequests.complete(rpcResponse);
+                    if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
+                        healthTracker.recordSuccess(nettyRpcClient.formatAddress((InetSocketAddress) ctx.channel().remoteAddress()));
+                    }
                 }
             }
         } finally {
@@ -99,9 +104,11 @@ public class NettyRpcClientHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Client caught an exception:", cause);
+        if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
+            healthTracker.recordFailure(nettyRpcClient.formatAddress((InetSocketAddress) ctx.channel().remoteAddress()));
+        }
         cause.printStackTrace();
         // Close the channel in case of an exception
         ctx.close();
     }
 }
-

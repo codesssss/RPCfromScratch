@@ -11,7 +11,11 @@ import lombok.Getter;
 @Getter
 public enum LoadBalanceEnum {
 
-    LOADBALANCE("loadBalance");
+    CONSISTENT_HASH("consistentHash"),
+    RANDOM("random"),
+    WEIGHTED_RANDOM("weightedRandom"),
+    WEIGHTED_ROUND_ROBIN("weightedRoundRobin"),
+    LEGACY("loadBalance");
 
     private final String name;
 }

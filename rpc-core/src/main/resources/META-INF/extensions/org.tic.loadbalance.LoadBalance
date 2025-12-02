@@ -1,1 +1,5 @@
-loadBalance=org.tic.loadbalance.loadbalancer.ConsistentHashLoadBalance
+loadBalance=org.tic.loadbalance.loadbalancer.ConsistentHashLoadBalance;order=10;default=true
+consistentHash=org.tic.loadbalance.loadbalancer.ConsistentHashLoadBalance;order=10;default=true
+random=org.tic.loadbalance.loadbalancer.RandomLoadBalance;order=30
+weightedRandom=org.tic.loadbalance.loadbalancer.WeightedRandomLoadBalance;order=20
+weightedRoundRobin=org.tic.loadbalance.loadbalancer.WeightedRoundRobinLoadBalance;order=25

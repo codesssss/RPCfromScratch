@@ -9,6 +9,7 @@ import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
+import org.tic.config.ConfigResolver;
 import org.tic.enums.CompressTypeEnum;
 import org.tic.enums.RpcConfigEnum;
 import org.tic.enums.SerializationTypeEnum;
@@ -24,10 +25,9 @@ import org.tic.remoting.dto.RpcResponse;
 import org.tic.remoting.transport.RpcRequestTransport;
 import org.tic.remoting.transport.netty.codec.RpcMessageDecoder;
 import org.tic.remoting.transport.netty.codec.RpcMessageEncoder;
-import org.tic.utils.PropertiesFileUtil;
+import org.tic.remoting.transport.netty.client.InstanceHealthTracker;
 
 import java.net.InetSocketAddress;
-import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -62,6 +62,7 @@ public final class NettyRpcClient implements RpcRequestTransport {
     private final ChannelProvider channelProvider;
     private final Bootstrap bootstrap;
     private final EventLoopGroup eventLoopGroup;
+    private final InstanceHealthTracker healthTracker;
     private final int retryCount;
     private final long retryIntervalMs;
 
@@ -93,42 +94,21 @@ public final class NettyRpcClient implements RpcRequestTransport {
         this.serviceDiscovery = ExtensionLoader.getExtensionLoader(ServiceDiscovery.class).getExtension(ServiceDiscoveryEnum.ZK.getName());
         this.unprocessedRequests = SingletonFactory.getInstance(UnprocessedRequests.class);
         this.channelProvider = SingletonFactory.getInstance(ChannelProvider.class);
+        this.healthTracker = SingletonFactory.getInstance(InstanceHealthTracker.class);
     }
     
     /**
      * Load retry count from configuration
      */
     private int loadRetryCount() {
-        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
-        if (properties != null) {
-            String retryStr = properties.getProperty(RpcConfigEnum.RPC_CONNECT_RETRY_COUNT.getPropertyValue());
-            if (retryStr != null) {
-                try {
-                    return Integer.parseInt(retryStr);
-                } catch (NumberFormatException e) {
-                    log.warn("Invalid retry count configuration: {}, using default: {}", retryStr, DEFAULT_RETRY_COUNT);
-                }
-            }
-        }
-        return DEFAULT_RETRY_COUNT;
+        return ConfigResolver.getInt(RpcConfigEnum.RPC_CONNECT_RETRY_COUNT.getPropertyValue(), DEFAULT_RETRY_COUNT);
     }
-    
+
     /**
      * Load retry interval from configuration
      */
     private long loadRetryInterval() {
-        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
-        if (properties != null) {
-            String intervalStr = properties.getProperty(RpcConfigEnum.RPC_CONNECT_RETRY_INTERVAL_MS.getPropertyValue());
-            if (intervalStr != null) {
-                try {
-                    return Long.parseLong(intervalStr);
-                } catch (NumberFormatException e) {
-                    log.warn("Invalid retry interval configuration: {}, using default: {}ms", intervalStr, DEFAULT_RETRY_INTERVAL_MS);
-                }
-            }
-        }
-        return DEFAULT_RETRY_INTERVAL_MS;
+        return ConfigResolver.getLong(RpcConfigEnum.RPC_CONNECT_RETRY_INTERVAL_MS.getPropertyValue(), DEFAULT_RETRY_INTERVAL_MS);
     }
 
     /**
@@ -164,6 +144,7 @@ public final class NettyRpcClient implements RpcRequestTransport {
                 throw new RpcException("Connection interrupted to " + inetSocketAddress, e);
             } catch (ExecutionException | TimeoutException e) {
                 lastException = e;
+                healthTracker.recordFailure(formatAddress(inetSocketAddress));
                 log.warn("Failed to connect to [{}], attempt {}/{}, error: {}", 
                         inetSocketAddress, attempt, retryCount, e.getMessage());
                 
@@ -205,16 +186,19 @@ public final class NettyRpcClient implements RpcRequestTransport {
             channel.writeAndFlush(rpcMessage).addListener((ChannelFutureListener) future -> {
                 if (future.isSuccess()) {
                     log.info("client send message: [{}]", rpcMessage);
+                    healthTracker.recordSuccess(formatAddress(inetSocketAddress));
                 } else {
                     future.channel().close();
                     // Remove from unprocessed requests
                     unprocessedRequests.remove(rpcRequest.getRequestId());
+                    healthTracker.recordFailure(formatAddress(inetSocketAddress));
                     resultFuture.completeExceptionally(future.cause());log.error("Send failed:", future.cause());
                 }
             });
         } else {
             // Channel is not active, remove it and throw exception
             channelProvider.remove(inetSocketAddress);
+            healthTracker.recordFailure(formatAddress(inetSocketAddress));
             throw new RpcException("Channel is not active for address: " + inetSocketAddress);
         } // 1. 这里添加括号，关闭 else 块
 
@@ -246,6 +230,10 @@ public final class NettyRpcClient implements RpcRequestTransport {
         channel = doConnect(inetSocketAddress);
         channelProvider.set(inetSocketAddress, channel);
         return channel;
+    }
+
+    String formatAddress(InetSocketAddress address) {
+        return address.getHostString() + ":" + address.getPort();
     }
 
     public void close() {

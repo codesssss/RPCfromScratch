@@ -8,21 +8,26 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.tic.config.ConfigResolver;
 import org.tic.config.CustomShutdownHook;
 import org.tic.config.RpcServiceConfig;
+import org.tic.enums.RpcConfigEnum;
 import org.tic.factory.SingletonFactory;
 import org.tic.provider.ServiceProvider;
 import org.tic.provider.impl.ZkServiceProviderImpl;
 import org.tic.remoting.transport.netty.codec.RpcMessageDecoder;
 import org.tic.remoting.transport.netty.codec.RpcMessageEncoder;
+import org.tic.remoting.transport.netty.server.BackpressureLimiter;
+import org.tic.remoting.transport.netty.server.ServerStateManager;
 import org.tic.utils.RuntimeUtil;
+import org.tic.utils.threadpoolutils.CustomThreadPoolConfig;
 import org.tic.utils.threadpoolutils.ThreadPoolFactoryUtil;
 
 import java.net.InetAddress;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -34,6 +39,11 @@ import java.util.concurrent.TimeUnit;
 public class NettyRpcServer {
 
     public static final int PORT = 9998;
+    private static final String BIZ_POOL_NAME = "service-handler-pool";
+
+    private int bizQueueCapacity;
+    private int bizMaxThreads;
+    private volatile Channel serverChannel;
 
     private final ServiceProvider serviceProvider = SingletonFactory.getInstance(ZkServiceProviderImpl.class);
 
@@ -43,14 +53,18 @@ public class NettyRpcServer {
 
     @SneakyThrows
     public void start() {
-        CustomShutdownHook.getCustomShutdownHook().clearAll();
         String host = InetAddress.getLocalHost().getHostAddress();
-        EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-        EventLoopGroup workerGroup = new NioEventLoopGroup();
-        DefaultEventExecutorGroup serviceHandlerGroup = new DefaultEventExecutorGroup(
-                RuntimeUtil.cpus() * 2,
-                ThreadPoolFactoryUtil.createThreadFactory("service-handler-group", false)
+        EventLoopGroup bossGroup = createEventLoopGroup(RpcConfigEnum.SERVER_BOSS_THREADS, 1);
+        EventLoopGroup workerGroup = createEventLoopGroup(RpcConfigEnum.SERVER_WORKER_THREADS, 0);
+        ExecutorService bizExecutor = buildBizExecutor();
+        ServerStateManager stateManager = new ServerStateManager();
+        int maxConcurrentDefault = bizMaxThreads + bizQueueCapacity;
+        int queueThreshold = (int) Math.max(1, bizQueueCapacity * 0.8);
+        BackpressureLimiter limiter = new BackpressureLimiter(
+                ConfigResolver.getInt(RpcConfigEnum.SERVER_MAX_CONCURRENT_REQUESTS.getPropertyValue(), maxConcurrentDefault),
+                ConfigResolver.getInt(RpcConfigEnum.SERVER_BACKPRESSURE_QUEUE_THRESHOLD.getPropertyValue(), queueThreshold)
         );
+        CustomShutdownHook.getCustomShutdownHook().register(stateManager, new java.net.InetSocketAddress(host, PORT), this::closeServerChannel, bossGroup, workerGroup);
         try {
             ServerBootstrap b = new ServerBootstrap();
             b.group(bossGroup, workerGroup)
@@ -71,12 +85,13 @@ public class NettyRpcServer {
                             p.addLast(new IdleStateHandler(30, 0, 0, TimeUnit.SECONDS));
                             p.addLast(new RpcMessageEncoder());
                             p.addLast(new RpcMessageDecoder());
-                            p.addLast(serviceHandlerGroup, new NettyRpcServerHandler());
+                            p.addLast(new NettyRpcServerHandler(bizExecutor, limiter, stateManager, BIZ_POOL_NAME));
                         }
                     });
 
             // 绑定端口，同步等待绑定成功
             ChannelFuture f = b.bind(host, PORT).sync();
+            serverChannel = f.channel();
             // 等待服务端监听端口关闭
             f.channel().closeFuture().sync();
         } catch (InterruptedException e) {
@@ -85,10 +100,38 @@ public class NettyRpcServer {
             log.error("shutdown bossGroup and workerGroup");
             bossGroup.shutdownGracefully();
             workerGroup.shutdownGracefully();
-            serviceHandlerGroup.shutdownGracefully();
+            bizExecutor.shutdown();
+        }
+    }
+
+    private EventLoopGroup createEventLoopGroup(RpcConfigEnum key, int defaultThreads) {
+        int threads = ConfigResolver.getInt(key.getPropertyValue(), defaultThreads);
+        if (threads > 0) {
+            return new NioEventLoopGroup(threads);
+        }
+        return new NioEventLoopGroup();
+    }
+
+    private ExecutorService buildBizExecutor() {
+        CustomThreadPoolConfig config = new CustomThreadPoolConfig();
+        int cpu = RuntimeUtil.cpus();
+        config.setCorePoolSize(ConfigResolver.getInt(RpcConfigEnum.SERVER_BIZ_CORE_THREADS.getPropertyValue(), Math.max(2, cpu)));
+        this.bizMaxThreads = ConfigResolver.getInt(RpcConfigEnum.SERVER_BIZ_MAX_THREADS.getPropertyValue(), Math.max(4, cpu * 2));
+        config.setMaximumPoolSize(bizMaxThreads);
+        config.setKeepAliveTime(ConfigResolver.getLong(RpcConfigEnum.SERVER_BIZ_KEEP_ALIVE_MS.getPropertyValue(), TimeUnit.MINUTES.toMillis(1)));
+        config.setUnit(TimeUnit.MILLISECONDS);
+        config.setRejectionPolicy(ConfigResolver.getString(RpcConfigEnum.SERVER_BIZ_REJECT_POLICY.getPropertyValue(), "abort"));
+        this.bizQueueCapacity = ConfigResolver.getInt(RpcConfigEnum.SERVER_BIZ_QUEUE_CAPACITY.getPropertyValue(), 200);
+        config.setWorkQueue(new java.util.concurrent.ArrayBlockingQueue<>(bizQueueCapacity));
+        return ThreadPoolFactoryUtil.createCustomThreadPoolIfAbsent(BIZ_POOL_NAME, config);
+    }
+
+    private void closeServerChannel() {
+        Channel channel = this.serverChannel;
+        if (channel != null && channel.isActive()) {
+            channel.close();
         }
     }
 
 
 }
-

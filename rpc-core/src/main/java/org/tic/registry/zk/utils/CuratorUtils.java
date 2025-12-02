@@ -11,13 +11,12 @@ import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.zookeeper.CreateMode;
+import org.tic.config.ConfigResolver;
 import org.tic.enums.RpcConfigEnum;
-import org.tic.utils.PropertiesFileUtil;
 
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -152,8 +151,7 @@ public final class CuratorUtils {
 
     public static CuratorFramework getZkClient() {
         // check if user has set zk address
-        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
-        String zookeeperAddress = properties != null && properties.getProperty(RpcConfigEnum.ZK_ADDRESS.getPropertyValue()) != null ? properties.getProperty(RpcConfigEnum.ZK_ADDRESS.getPropertyValue()) : DEFAULT_ZOOKEEPER_ADDRESS;
+        String zookeeperAddress = ConfigResolver.getString(RpcConfigEnum.ZK_ADDRESS.getPropertyValue(), DEFAULT_ZOOKEEPER_ADDRESS);
         // if zkClient has been started, return directly
         if (zkClient != null && zkClient.getState() == CuratorFrameworkState.STARTED) {
             return zkClient;
@@ -225,17 +223,7 @@ public final class CuratorUtils {
     }
 
     private static long getCacheTtlMs() {
-        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
-        if (properties != null) {
-            String ttl = properties.getProperty(RpcConfigEnum.ZK_CACHE_TTL_MS.getPropertyValue());
-            if (ttl != null) {
-                try {
-                    return Long.parseLong(ttl);
-                } catch (NumberFormatException ignored) {
-                }
-            }
-        }
-        return DEFAULT_CACHE_TTL_MS;
+        return ConfigResolver.getLong(RpcConfigEnum.ZK_CACHE_TTL_MS.getPropertyValue(), DEFAULT_CACHE_TTL_MS);
     }
 
 }

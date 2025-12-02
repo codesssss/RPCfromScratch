@@ -16,6 +16,9 @@ import org.tic.remoting.dto.RpcMessage;
 import org.tic.remoting.dto.RpcRequest;
 import org.tic.remoting.dto.RpcResponse;
 import org.tic.remoting.handler.RpcRequestHandler;
+import org.tic.utils.threadpoolutils.ThreadPoolFactoryUtil;
+
+import java.util.concurrent.ExecutorService;
 
 /**
  * @author codesssss
@@ -25,9 +28,17 @@ import org.tic.remoting.handler.RpcRequestHandler;
 public class NettyRpcServerHandler extends ChannelInboundHandlerAdapter {
 
     private final RpcRequestHandler rpcRequestHandler;
+    private final ExecutorService bizExecutor;
+    private final BackpressureLimiter limiter;
+    private final ServerStateManager stateManager;
+    private final String poolName;
 
-    public NettyRpcServerHandler() {
+    public NettyRpcServerHandler(ExecutorService bizExecutor, BackpressureLimiter limiter, ServerStateManager stateManager, String poolName) {
         this.rpcRequestHandler = SingletonFactory.getInstance(RpcRequestHandler.class);
+        this.bizExecutor = bizExecutor;
+        this.limiter = limiter;
+        this.stateManager = stateManager;
+        this.poolName = poolName;
     }
 
     @Override
@@ -42,27 +53,64 @@ public class NettyRpcServerHandler extends ChannelInboundHandlerAdapter {
                 if (messageType == RpcConstants.HEARTBEAT_REQUEST_TYPE) {
                     rpcMessage.setMessageType(RpcConstants.HEARTBEAT_RESPONSE_TYPE);
                     rpcMessage.setData(RpcConstants.PONG);
+                    ctx.writeAndFlush(rpcMessage).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
                 } else {
                     RpcRequest rpcRequest = (RpcRequest) ((RpcMessage) msg).getData();
-                    // Execute the target method (the method the client needs to execute) and return the method result
-                    Object result = rpcRequestHandler.handle(rpcRequest);
-                    log.info(String.format("server get result: %s", result.toString()));
-                    rpcMessage.setMessageType(RpcConstants.RESPONSE_TYPE);
-                    if (ctx.channel().isActive() && ctx.channel().isWritable()) {
-                        RpcResponse<Object> rpcResponse = RpcResponse.success(result, rpcRequest.getRequestId());
-                        rpcMessage.setData(rpcResponse);
-                    } else {
-                        RpcResponse<Object> rpcResponse = RpcResponse.fail(RpcResponseCodeEnum.FAIL);
-                        rpcMessage.setData(rpcResponse);
-                        log.error("not writable now, message dropped");
+                    if (!stateManager.tryEnterRequest()) {
+                        log.warn("Server draining/stopped, reject request: {}", rpcRequest.getRequestId());
+                        sendOverload(ctx, rpcRequest, rpcMessage);
+                        return;
+                    }
+                    ThreadPoolFactoryUtil.ThreadPoolStats stats = ThreadPoolFactoryUtil.getThreadPoolStats(poolName);
+                    int queueSize = stats == null ? 0 : stats.queueSize;
+                    int inflight = stateManager.getInflight();
+                    if (!limiter.allow(inflight, queueSize)) {
+                        stateManager.onRequestComplete();
+                        log.warn("Backpressure triggered. inflight={}, queue={}", inflight, queueSize);
+                        sendOverload(ctx, rpcRequest, rpcMessage);
+                        return;
+                    }
+                    try {
+                        bizExecutor.execute(() -> handleRequest(ctx, rpcRequest, rpcMessage));
+                    } catch (Exception e) {
+                        stateManager.onRequestComplete();
+                        log.error("Submit to biz executor failed", e);
+                        sendOverload(ctx, rpcRequest, rpcMessage);
                     }
                 }
-                ctx.writeAndFlush(rpcMessage).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
             }
         } finally {
             //Ensure that ByteBuf is released, otherwise there may be memory leaks
             ReferenceCountUtil.release(msg);
         }
+    }
+
+    private void handleRequest(ChannelHandlerContext ctx, RpcRequest rpcRequest, RpcMessage rpcMessage) {
+        try {
+            // Execute the target method (the method the client needs to execute) and return the method result
+            Object result = rpcRequestHandler.handle(rpcRequest);
+            log.info(String.format("server get result: %s", result.toString()));
+            rpcMessage.setMessageType(RpcConstants.RESPONSE_TYPE);
+            if (ctx.channel().isActive() && ctx.channel().isWritable()) {
+                RpcResponse<Object> rpcResponse = RpcResponse.success(result, rpcRequest.getRequestId());
+                rpcMessage.setData(rpcResponse);
+            } else {
+                RpcResponse<Object> rpcResponse = RpcResponse.fail(RpcResponseCodeEnum.FAIL);
+                rpcMessage.setData(rpcResponse);
+                log.error("not writable now, message dropped");
+            }
+            ctx.writeAndFlush(rpcMessage).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+        } finally {
+            stateManager.onRequestComplete();
+        }
+    }
+
+    private void sendOverload(ChannelHandlerContext ctx, RpcRequest rpcRequest, RpcMessage rpcMessage) {
+        rpcMessage.setMessageType(RpcConstants.RESPONSE_TYPE);
+        RpcResponse<Object> rpcResponse = RpcResponse.fail(RpcResponseCodeEnum.TOO_MANY_REQUESTS);
+        rpcResponse.setRequestId(rpcRequest.getRequestId());
+        rpcMessage.setData(rpcResponse);
+        ctx.writeAndFlush(rpcMessage).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package org.tic.proxy;
 
 import lombok.extern.slf4j.Slf4j;
+import org.tic.config.ConfigResolver;
 import org.tic.config.RpcServiceConfig;
 import org.tic.enums.RpcConfigEnum;
 import org.tic.enums.RpcErrorMessageEnum;
@@ -10,12 +11,10 @@ import org.tic.remoting.dto.RpcRequest;
 import org.tic.remoting.dto.RpcResponse;
 import org.tic.remoting.transport.RpcRequestTransport;
 import org.tic.remoting.transport.netty.client.NettyRpcClient;
-import org.tic.utils.PropertiesFileUtil;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -59,18 +58,7 @@ public class RpcClientProxy implements InvocationHandler {
      * Load request timeout from configuration file
      */
     private long loadRequestTimeout() {
-        Properties properties = PropertiesFileUtil.readPropertiesFile(RpcConfigEnum.RPC_CONFIG_PATH.getPropertyValue());
-        if (properties != null) {
-            String timeoutStr = properties.getProperty(RpcConfigEnum.RPC_REQUEST_TIMEOUT_MS.getPropertyValue());
-            if (timeoutStr != null) {
-                try {
-                    return Long.parseLong(timeoutStr);
-                } catch (NumberFormatException e) {
-                    log.warn("Invalid request timeout configuration: {}, using default: {}ms", timeoutStr, DEFAULT_REQUEST_TIMEOUT_MS);
-                }
-            }
-        }
-        return DEFAULT_REQUEST_TIMEOUT_MS;
+        return ConfigResolver.getLong(RpcConfigEnum.RPC_REQUEST_TIMEOUT_MS.getPropertyValue(), DEFAULT_REQUEST_TIMEOUT_MS);
     }
 
     /**

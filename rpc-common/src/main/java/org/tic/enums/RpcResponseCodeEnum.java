@@ -14,7 +14,8 @@ import lombok.ToString;
 public enum RpcResponseCodeEnum {
 
     SUCCESS(200, "The remote call is successful"),
-    FAIL(500, "The remote call is fail");
+    FAIL(500, "The remote call is fail"),
+    TOO_MANY_REQUESTS(429, "Server overloaded, please retry");
     private final int code;
 
     private final String message;

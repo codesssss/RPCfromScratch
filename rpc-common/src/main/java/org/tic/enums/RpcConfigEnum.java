@@ -16,6 +16,25 @@ public enum RpcConfigEnum {
     ZK_CACHE_TTL_MS("rpc.zk.cache.ttl.ms"),
     INSTANCE_WEIGHT("rpc.instance.weight"),
     /**
+     * Enable configuration resolution logging, default true
+     */
+    CONFIG_LOG_ENABLED("rpc.config.log.enabled"),
+    SERVER_BOSS_THREADS("rpc.server.boss.threads"),
+    SERVER_WORKER_THREADS("rpc.server.worker.threads"),
+    SERVER_BIZ_CORE_THREADS("rpc.server.biz.core.threads"),
+    SERVER_BIZ_MAX_THREADS("rpc.server.biz.max.threads"),
+    SERVER_BIZ_KEEP_ALIVE_MS("rpc.server.biz.keepalive.ms"),
+    SERVER_BIZ_QUEUE_CAPACITY("rpc.server.biz.queue.capacity"),
+    SERVER_BIZ_REJECT_POLICY("rpc.server.biz.reject.policy"),
+    SERVER_MAX_CONCURRENT_REQUESTS("rpc.server.max.concurrent"),
+    SERVER_BACKPRESSURE_QUEUE_THRESHOLD("rpc.server.backpressure.queue.threshold"),
+    SERVER_DRAIN_TIMEOUT_MS("rpc.server.drain.timeout.ms"),
+    LOAD_BALANCE_STRATEGY("rpc.loadbalance.strategy"),
+    HASH_KEY_STRATEGY("rpc.hash.key.strategy"),
+    CLIENT_CB_FAILURE_THRESHOLD("rpc.client.circuit.failure.threshold"),
+    CLIENT_CB_OPEN_MS("rpc.client.circuit.open.ms"),
+    CLIENT_CB_HALF_OPEN_MAX("rpc.client.circuit.halfopen.max"),
+    /**
      * RPC request timeout in milliseconds, default 30000ms
      */
     RPC_REQUEST_TIMEOUT_MS("rpc.request.timeout.ms"),
@@ -31,4 +50,3 @@ public enum RpcConfigEnum {
     private final String propertyValue;
 
 }
-
